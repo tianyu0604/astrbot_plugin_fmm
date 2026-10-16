@@ -215,6 +215,10 @@ export function MemberSyncDialog({ open, onOpenChange, onSynced }: MemberSyncDia
               群：{plan.group_name || '（未命名）'}（{plan.group_id}）· 群成员 {plan.group_member_count} 人
               · 现有档案 {plan.profile_count} 人
             </div>
+            <div className="text-xs text-muted-foreground">
+              会写入字段：{plan.field_names?.length ? plan.field_names.join('、') : '（没有可写入的自定义字段）'}
+              {' · '}照片（确认后下载）
+            </div>
 
             {plan.suspicious && <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -223,9 +227,9 @@ export function MemberSyncDialog({ open, onOpenChange, onSynced }: MemberSyncDia
                 这次要退群的人数占了现有档案的一半以上，先确认群号有没有选错。确认无误请勾选下面的确认项。
               </AlertDescription>
             </Alert>}
-            {!plan.class_field && <Alert><AlertCircle className="h-4 w-4" />
-              <AlertTitle>找不到班级字段</AlertTitle>
-              <AlertDescription>没有名为「专业班级」的自定义字段，群名片里的班级这次不会写入。</AlertDescription>
+            {!plan.field_names?.length && <Alert><AlertCircle className="h-4 w-4" />
+              <AlertTitle>没有可写入的自定义字段</AlertTitle>
+              <AlertDescription>档案里没有「专业班级」「小名」「部门」这类字段，群名片里解析出来的信息这次不会被写入。</AlertDescription>
             </Alert>}
 
             {nothingToDo

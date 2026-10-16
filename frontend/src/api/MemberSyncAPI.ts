@@ -60,6 +60,9 @@ export interface SyncPlan {
     departed: SyncDepartedMember[];
     retired_absent_count: number;
     unchanged: number;
+    /** 名片属性 → 实际写入的自定义字段（按字段名自动识别） */
+    field_names: string[];
+    fields: Record<string, { id: string; name: string }>;
     skipped: { qq: string; reason: string }[];
     suspicious: boolean;
     fingerprint: string;

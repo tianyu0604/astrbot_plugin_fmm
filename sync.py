@@ -23,28 +23,59 @@ MARK_RE = re.compile(r"[\[［][^\]］]*[\]］]\s*$")
 PAREN_RE = re.compile(r"[\(（][^\)）]*[\)）]")
 SEX = {"male": "男", "female": "女", "unknown": "未知"}
 DEPARTED = ("retire", "delete", "keep")
-CLASS_NAMES = ("专业班级", "班级")
+# 群名片能解析出的属性 → 要写进哪个名称的自定义字段（按字段名自动识别）
+ATTR_FIELDS = {
+    "cls": ("专业班级", "班级"),
+    "xiaoming": ("小名",),
+    "dept": ("部门", "部门代号"),
+}
+FIELD_LABEL = {"cls": "专业班级", "xiaoming": "小名", "dept": "部门"}
+DEPT_RE = re.compile(r"[A-Za-z0-9 &＆、,，/+-]{1,20}$")
 
 
 def parse_card(card, nickname):
-    """群名片 → (姓名, 专业班级)。'数管2602周晨希（粥粥）[P]' → ('周晨希', '数管2602')"""
+    """群名片 → 属性字典。
+
+    '数管2602周晨希（粥粥）[P]' → {name: 周晨希, cls: 数管2602, xiaoming: 粥粥, dept: P}
+    没有群名片的用 QQ 昵称当姓名，其余属性留空（不猜）。
+    """
     text = (card or "").strip()
     if not text:
-        return (nickname or "").strip()[:50], ""
+        return {"name": (nickname or "").strip()[:50], "cls": "", "xiaoming": "", "dept": ""}
+
+    # 末尾的 [T] / ［M&C］ 之类：一般是部门代号，先去下来
+    marks = []
     while True:
         mark = MARK_RE.search(text)
         if not mark:
             break
+        marks.append(mark.group(0).strip("[]［］").strip())
         text = text[:mark.start()].strip()
+    dept = ""
+    if marks:
+        joined = " ".join(part for part in marks if part)
+        if DEPT_RE.fullmatch(joined):
+            dept = re.sub(r"\s*[&＆]\s*", "、", joined).strip()
+
+    # 开头的「专业+年级班号」
     cls, rest = "", text
     matched = CLASS_RE.match(text)
     if matched:
         cls, rest = matched.group(1) + matched.group(2), matched.group(3).strip()
+
+    # （小薇）/ (博月) / (小柯-S) → 小名
+    xiaoming, name = "", rest
     paren = PAREN_RE.search(rest)
-    name = (rest[:paren.start()] if (paren and paren.start() > 0) else rest).strip()
+    if paren:
+        inner = paren.group(0).strip("()（）").strip()
+        inner = re.split(r"[-—/|]", inner)[0].strip()
+        if 1 <= len(inner) <= 12:
+            xiaoming = inner
+        if paren.start() > 0:
+            name = rest[:paren.start()]
     name = re.sub(r"^班[\s\u3000]*", "", name).strip()
     name = re.sub(r"\s+", " ", name)[:50]
-    return (name or text[:50]), cls
+    return {"name": (name or text[:50]), "cls": cls, "xiaoming": xiaoming, "dept": dept}
 
 
 def normalize(members, bot_qq=""):
@@ -58,13 +89,12 @@ def normalize(members, bot_qq=""):
         if not QQ.fullmatch(qq):
             skipped.append({"qq": qq, "reason": "QQ 号不符合档案规则（5-12 位，不以 0 开头）"})
             continue
-        name, cls = parse_card(member.get("card"), member.get("nickname"))
-        if not 1 <= len(name) <= 50:
+        attrs = parse_card(member.get("card"), member.get("nickname"))
+        if not 1 <= len(attrs["name"]) <= 50:
             skipped.append({"qq": qq, "reason": "解析出的姓名长度不合法"})
             continue
-        items.append({"qq": qq, "name": name, "cls": cls,
-                      "sex": SEX.get(member.get("sex"), "未知"),
-                      "nickname": str(member.get("nickname") or "")[:50]})
+        items.append({"qq": qq, "sex": SEX.get(member.get("sex"), "未知"),
+                      "nickname": str(member.get("nickname") or "")[:50], **attrs})
     return items, skipped
 
 
@@ -101,16 +131,23 @@ class SyncService:
     def _enabled(self):
         require(self.fetch is not None, "当前环境不支持同步（独立预览模式）")
 
-    def class_field(self):
-        """专业班级写进哪个自定义字段：配置指定，否则自动找名为「专业班级」的字段。"""
-        want = str(self.config.get("sync_class_field") or "").strip()
+    def field_map(self):
+        """属性 → 自定义字段 id：按字段名自动认，认不出的属性就跳过。"""
         fields = self.store.fields()
-        if want:
-            return want if any(f["id"] == want for f in fields) else ""
-        for field in fields:
-            if str(field.get("name", "")).strip() in CLASS_NAMES:
-                return field["id"]
-        return ""
+        mapping = {}
+        for attr, names in ATTR_FIELDS.items():
+            hit = next((f["id"] for f in fields if str(f.get("name", "")).strip() in names), None)
+            if attr == "cls":
+                want = str(self.config.get("sync_class_field") or "").strip()
+                if want and any(f["id"] == want for f in fields):
+                    hit = want
+            if hit:
+                mapping[attr] = hit
+        return mapping
+
+    def class_field(self):
+        """兼容旧调用：专业班级写进哪个自定义字段。"""
+        return self.field_map().get("cls", "")
 
     def _member(self, key):
         return next((m for m in self.store.members() if m["id"] == key), None)
@@ -161,9 +198,8 @@ class SyncService:
                 "class_field": self.class_field(), "class_field_name": self._class_field_name()}
 
     def _class_field_name(self):
-        key = self.class_field()
-        field = next((f for f in self.store.fields() if f["id"] == key), None)
-        return str(field.get("name", "")) if field else ""
+        fields = self.store.fields()
+        return next((str(f.get("name", "")) for f in fields if f["id"] == self.class_field()), "")
 
     async def preview(self, group_id, platform_id=None):
         self._enabled()
@@ -177,7 +213,8 @@ class SyncService:
         items, skipped = normalize(raw, await self._bot_qq(platform_id))
         require(items, "群成员里没有一个可用的 QQ 号，已中止")
 
-        field_id = self.class_field()
+        mapping = self.field_map()
+        field_id = mapping.get("cls", "")
         current = {}
         for member in self.store.members():
             current[str(member["data"].get("qq", ""))] = member
@@ -192,17 +229,19 @@ class SyncService:
             changes = []
             if item["name"] and data.get("name") != item["name"]:
                 changes.append({"field": "姓名", "old": str(data.get("name", "")), "new": item["name"]})
-            old_cls = str(data.get(field_id, "") or "") if field_id else ""
-            if field_id and item["cls"] and old_cls != item["cls"]:
-                changes.append({"field": "专业班级", "old": old_cls, "new": item["cls"]})
+            for attr, key in mapping.items():
+                value = str(item.get(attr) or "")
+                old = str(data.get(key, "") or "")
+                if value and old != value:
+                    changes.append({"field": FIELD_LABEL[attr], "old": old, "new": value})
             if str(data.get("status", "")) != "在职":
                 changes.append({"field": "状态", "old": str(data.get("status", "")), "new": "在职（已回群）"})
             if not data.get("photo"):
                 changes.append({"field": "照片", "old": "无", "new": "补头像"})
             if changes:
-                changed.append({"id": member["id"], "qq": item["qq"], "name": item["name"],
-                                "cls": item["cls"], "avatar": AVATAR.format(qq=item["qq"]),
-                                "changes": changes})
+                # 带上解析出的全部属性：apply 会重新算一遍差异，不能只靠 changes 里的字段名
+                changed.append(dict(item, id=member["id"],
+                                    avatar=AVATAR.format(qq=item["qq"]), changes=changes))
             else:
                 unchanged += 1
 
@@ -224,6 +263,8 @@ class SyncService:
             "group_member_count": info.get("member_count", len(items) + len(skipped)),
             "profile_count": len(current), "class_field": field_id,
             "class_field_name": self._class_field_name(),
+            "field_names": [FIELD_LABEL[attr] for attr in mapping],
+            "fields": {attr: {"id": fid, "name": FIELD_LABEL[attr]} for attr, fid in mapping.items()},
             "added": added, "changed": changed, "departed": departed,
             "retired_absent": retired_absent, "retired_absent_count": len(retired_absent),
             "unchanged": unchanged, "skipped": skipped,
@@ -248,7 +289,7 @@ class SyncService:
             if plan["suspicious"] and not payload.get("force"):
                 raise ValueError("本次退群人数异常多，请确认群号是否选错，再点一次确认")
 
-            field_id = plan["class_field"]
+            mapping = self.field_map()
             done = {"added": [], "changed": [], "departed": [], "photos": 0, "failed": []}
 
             async def photo_for(qq, fallback=""):
@@ -264,8 +305,9 @@ class SyncService:
                     entry = {"name": item["name"], "qq": item["qq"],
                              "gender": item.get("sex") or "未知", "status": "在职",
                              "photo": await photo_for(item["qq"])}
-                    if field_id and item["cls"]:
-                        entry[field_id] = item["cls"]
+                    for attr, fid in mapping.items():
+                        if item.get(attr):
+                            entry[fid] = item[attr]
                     self.store.save_members([entry])
                     done["added"].append({"name": item["name"], "qq": item["qq"]})
                 except Exception as exc:
@@ -278,8 +320,9 @@ class SyncService:
                     data = dict(member["data"])
                     data.update({"name": item["name"], "qq": item["qq"], "status": "在职"})
                     data.setdefault("gender", "未知")
-                    if field_id and item["cls"]:
-                        data[field_id] = item["cls"]
+                    for attr, fid in mapping.items():
+                        if item.get(attr):
+                            data[fid] = item[attr]
                     old_photo = str(data.get("photo") or "")
                     if refresh or not old_photo or old_photo.startswith("http"):
                         data["photo"] = await photo_for(item["qq"], old_photo)
