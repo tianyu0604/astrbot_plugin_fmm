@@ -3,6 +3,7 @@ import { Member, MemberData, CustomField, HistoryRecord, Gender, Status } from '
 import { Dashboard } from './Dashboard';
 import { MemberCard } from './MemberCard';
 import { MemberDialog } from './MemberDialog';
+import { MemberSyncDialog } from './MemberSyncDialog';
 import { HistoryDialog } from './HistoryDialog';
 import { StatusAnalysisDialog } from './StatusAnalysisDialog';
 import { ImagePreviewDialog } from './ImagePreviewDialog';
@@ -14,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { AlertCircle, CheckCircle, XCircle } from 'lucide-react';
-import { Plus, Search, Upload, History, Edit, Download, Filter, X as XIcon } from 'lucide-react';
+import { Plus, Search, Upload, History, Edit, Download, Filter, RefreshCw, X as XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadExcelTemplate } from '../utils/excelTemplate';
 import { parseExcelFile } from '../utils/excelParser';
@@ -49,6 +50,7 @@ export function MemberArchives({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isExcelDialogOpen, setIsExcelDialogOpen] = useState(false);
+  const [isSyncOpen, setIsSyncOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'view' | 'edit'>('view');
   const [apiMembers, setApiMembers] = useState<MemberInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -817,6 +819,10 @@ export function MemberArchives({
               </PopoverContent>
             </Popover>
 
+            <Button onClick={() => setIsSyncOpen(true)} variant="outline" className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              同步群成员
+            </Button>
             <Button onClick={() => setIsExcelDialogOpen(true)} variant="outline" className="gap-2">
               <Upload className="h-4 w-4" />
               Excel导入
@@ -1040,6 +1046,13 @@ export function MemberArchives({
         images={imagePreview.images}
         initialIndex={imagePreview.initialIndex}
         title={imagePreview.title}
+      />
+
+      {/* 同步 QQ 群成员 */}
+      <MemberSyncDialog
+        open={isSyncOpen}
+        onOpenChange={setIsSyncOpen}
+        onSynced={fetchMembers}
       />
 
       {/* Excel Import Dialog */}

@@ -119,3 +119,9 @@
   .pool-choices { max-height: 130px; border-right: 0; border-bottom: 1px solid var(--border); }
   .pool-order { max-height: 180px; }
 }
+
+/* 群成员同步弹窗：补几个预编译样式表里没有的高度/字重类 */
+.sync-body { flex: 1; min-height: 0; overflow-y: auto; }
+.sync-list { max-height: 220px; overflow-y: auto; }
+.sync-row:last-child { border-bottom: 0; }
+.sync-label { font-weight: 400; }

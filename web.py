@@ -40,7 +40,7 @@ def password_for(data_dir, configured=""):
     return password
 
 
-def create_app(service, data_dir, password, static_dir=None):
+def create_app(service, data_dir, password, static_dir=None, sync=None):
     data_dir = Path(data_dir)
     uploads = data_dir / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
@@ -230,6 +230,28 @@ def create_app(service, data_dir, password, static_dir=None):
     app.router.add_post(API + "/upload", upload)
     app.router.add_get(API + "/images/{name}", image)
     app.router.add_get(API + "/backup", backup)
+    async def sync_groups(request):
+        require(sync is not None, "当前环境不支持同步（独立预览模式）")
+        return result(await sync.groups(request.query.get("platform_id")))
+
+    async def sync_preview(request):
+        require(sync is not None, "当前环境不支持同步（独立预览模式）")
+        body = await request.json() if request.method == "POST" else {}
+        return result(await sync.preview(body.get("group_id"), body.get("platform_id")))
+
+    async def sync_apply(request):
+        require(sync is not None, "当前环境不支持同步（独立预览模式）")
+        body = await request.json()
+        outcome = await sync.apply(body)
+        if outcome.get("stale"):
+            # 确认前后群里变了：不按旧名单动手，把新差异丢回去让人再看一眼
+            return web.json_response({"code": 409, "msg": "群成员刚刚有变化，请重新确认要同步的内容",
+                                      "data": outcome["plan"]}, status=409)
+        return result(outcome)
+
+    app.router.add_get(API + "/sync/groups", sync_groups)
+    app.router.add_post(API + "/sync/preview", sync_preview)
+    app.router.add_post(API + "/sync/apply", sync_apply)
     register_legacy_routes(app, service, API, result)
     app.router.add_get("/{tail:.*}", frontend)
     return app

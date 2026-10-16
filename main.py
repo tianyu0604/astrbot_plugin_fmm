@@ -6,7 +6,8 @@ from astrbot.api.star import Context, Star, StarTools
 
 from .service import DeliveryRejected, ReminderService
 from .store import Store
-from .web import create_app, password_for
+from .sync import SyncService
+from .web import API, create_app, password_for
 
 
 class FMMPlugin(Star):
@@ -48,11 +49,38 @@ class FMMPlugin(Star):
             raise RuntimeError("OneBot 未返回 message_id，请检查群消息后人工确认")
         return response["message_id"]
 
+    def bot(self, platform_id=None):
+        """取 OneBot 客户端：给了 platform_id 就用它，否则取第一个 aiocqhttp 实例。"""
+        platform = self.context.get_platform_inst(platform_id) if platform_id else None
+        if platform is None:
+            platform = next((p for p in self.context.platform_manager.get_insts()
+                             if p.meta().name == "aiocqhttp"), None)
+        if platform is None or platform.meta().name != "aiocqhttp":
+            raise DeliveryRejected("OneBot 机器人账号不可用")
+        return platform.get_client()
+
+    async def fetch_group(self, platform_id, group_id):
+        bot = self.bot(platform_id)
+        info = await bot.call_action("get_group_info", group_id=int(group_id))
+        members = await bot.call_action("get_group_member_list", group_id=int(group_id))
+        return info, members
+
+    async def fetch_groups(self, platform_id=None):
+        return await self.bot(platform_id).call_action("get_group_list")
+
+    async def fetch_bot_qq(self, platform_id=None):
+        info = await self.bot(platform_id).call_action("get_login_info")
+        return str(info.get("user_id", ""))
+
     async def initialize(self):
         data_dir = StarTools.get_data_dir("astrbot_plugin_fmm")
-        password = password_for(data_dir, self.config.get("web_password", ""))
-        self.service = ReminderService(Store(data_dir / "fmm.sqlite3"), self.send_reminder, self.platforms)
-        self.runner = web.AppRunner(create_app(self.service, data_dir, password))
+        password = password_for(data_dir, str(self.config.get("web_password", "")))
+        store = Store(data_dir / "fmm.sqlite3")
+        self.service = ReminderService(store, self.send_reminder, self.platforms)
+        sync = SyncService(store, self.config, fetch=self.fetch_group, groups_of=self.fetch_groups,
+                           bot_qq=self.fetch_bot_qq, uploads=data_dir / "uploads",
+                           image_prefix=API + "/images/")
+        self.runner = web.AppRunner(create_app(self.service, data_dir, password, sync=sync))
         try:
             await self.runner.setup()
             host = self.config.get("web_host", "127.0.0.1")

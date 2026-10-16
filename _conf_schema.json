@@ -1,5 +1,7 @@
 {
   "web_host": {"description": "独立管理页面监听地址；Docker 可设置为 0.0.0.0 并映射端口", "type": "string", "default": "127.0.0.1"},
   "web_port": {"description": "独立管理页面端口", "type": "int", "default": 8765},
-  "web_password": {"description": "管理密码，至少 12 位；留空时在插件数据目录生成 admin_password.txt", "type": "string", "default": ""}
+  "web_password": {"description": "管理密码，至少 12 位；留空时在插件数据目录生成 admin_password.txt", "type": "string", "default": ""},
+  "sync_group_id": {"description": "「同步群成员」默认同步的 QQ 群号（留空则每次在弹窗里选）", "type": "string", "default": "629409123"},
+  "sync_class_field": {"description": "群名片里的班级写进哪个自定义字段的 ID；留空则自动找名为「专业班级」的字段", "type": "string", "default": ""}
 }
