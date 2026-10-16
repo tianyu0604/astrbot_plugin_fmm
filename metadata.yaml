@@ -1,0 +1,8 @@
+name: astrbot_plugin_fmm
+display_name: FMM 团队排班
+desc: 成员档案、QQ 号管理和独立人员池轮换群提醒，内置 SQLite 与独立管理页面。
+version: v1.0.0
+author: FMM Team
+astrbot_version: '>=4.5.0'
+support_platforms:
+  - aiocqhttp
