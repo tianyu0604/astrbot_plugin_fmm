@@ -120,8 +120,18 @@
   .pool-order { max-height: 180px; }
 }
 
-/* 群成员同步弹窗：补几个预编译样式表里没有的高度/字重类 */
-.sync-body { flex: 1; min-height: 0; overflow-y: auto; }
-.sync-list { max-height: 220px; overflow-y: auto; }
+/* 群成员同步弹窗
+   dialog 自带的类是 grid + p-6 + gap-4 + sm:max-w-lg，且预编译样式表里这些工具类排在
+   plugin.css 后面（同权重后者胜），所以这里用 [data-slot] 提一级优先级来覆盖。 */
+[data-slot='dialog-content'].sync-dialog {
+  display: flex; flex-direction: column; gap: 0;
+  width: min(48rem, calc(100vw - 2rem)); max-width: none;
+  max-height: min(78vh, 620px);
+  padding: 0; overflow: hidden;
+}
+.sync-header { flex: none; padding: 18px 22px 12px; border-bottom: 1px solid var(--border); }
+.sync-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 22px; }
+.sync-footer { flex: none; padding: 12px 22px; border-top: 1px solid var(--border); }
+.sync-list { max-height: 150px; overflow-y: auto; }
 .sync-row:last-child { border-bottom: 0; }
 .sync-label { font-weight: 400; }

@@ -153,20 +153,20 @@ export function MemberSyncDialog({ open, onOpenChange, onSynced }: MemberSyncDia
   const close = (next: boolean) => { if (!busy) onOpenChange(next); };
 
   return <Dialog open={open} onOpenChange={close}>
-    <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col p-0">
-      <DialogHeader className="px-6 pt-6 pb-3">
+    <DialogContent className="sync-dialog">
+      <DialogHeader className="sync-header">
         <DialogTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5" />同步群成员</DialogTitle>
         <DialogDescription>
-          读取 QQ 群成员，和现有成员档案比出差异。确认之后才会写入档案，预览本身不会改动任何数据。
+          读取 QQ 群成员与现有档案比对，确认之后才写入。预览不改动任何数据。
         </DialogDescription>
       </DialogHeader>
 
-      <div className="sync-body px-6">
-        <div className="space-y-4 pb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="sync-body">
+        <div className="space-y-3 pb-2">
+          <div className="flex flex-wrap items-center gap-3">
             <Label htmlFor="sync-group" className="shrink-0">同步哪个群</Label>
             <Select value={selected || undefined} onValueChange={changeGroup} disabled={loading || busy || !groups.length}>
-              <SelectTrigger id="sync-group" className="sm:max-w-md"><SelectValue placeholder="选择 QQ 群" /></SelectTrigger>
+              <SelectTrigger id="sync-group" className="min-w-0 flex-1 overflow-hidden"><SelectValue placeholder="选择 QQ 群" /></SelectTrigger>
               <SelectContent>
                 {groups.map(group => <SelectItem key={group.id} value={group.id}>
                   {group.name}（{group.id}）
@@ -296,7 +296,7 @@ export function MemberSyncDialog({ open, onOpenChange, onSynced }: MemberSyncDia
         </div>
       </div>
 
-      <DialogFooter className="px-6 py-3 border-t">
+      <DialogFooter className="sync-footer">
         <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>{result ? '关闭' : '取消'}</Button>
         {!result && <Button disabled={busy || loading || !plan || nothingToDo || blockedByForce} onClick={submit}>
           {busy ? '同步中...' : nothingToDo ? '无需同步' : '确认同步'}
