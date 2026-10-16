@@ -2,6 +2,14 @@
 
 基于现有 FMM React 前端的 AstrBot 插件，使用 Python + SQLite，运行时不需要原有 Go、MySQL、Redis 或七牛服务。
 
+## 仓库内容
+
+本仓库只提交源码：
+
+- 根目录：AstrBot 插件 Python 源码、配置和运行依赖。
+- `frontend/`：React + Vite 前端源码。
+- `web/`：本地构建输出，不提交到 Git。
+
 ## 原版页面
 
 直接复用原 React 项目的成员档案卡片、统计、搜索筛选、字段管理、Excel 导入、花名册导出和任务管理组件及样式，在原界面上增加 QQ 必填绑定、“群提醒”和“发送记录”页。原页面接口通过插件兼容层接入 SQLite。
@@ -11,7 +19,7 @@
 ## 安装
 
 1. 使用 AstrBot 4.5.0 或更新的 4.x 版本，Python 3.10+，配置好 OneBot V11（`aiocqhttp`，例如 NapCat）。机器人需要已加入目标 QQ 群。
-2. 将插件压缩包解压到 `AstrBot/data/plugins/astrbot_plugin_fmm/`。确保该目录下直接包含 `main.py`、`metadata.yaml`、`requirements.txt` 和 `web/`，不要多套一层目录。
+2. 将插件部署到 `AstrBot/data/plugins/astrbot_plugin_fmm/`。确保该目录下直接包含 `main.py`、`metadata.yaml`、`requirements.txt` 和 `web/`，不要多套一层目录。发布包应已完成前端构建；直接使用本源码仓库时，需要先按照下文的构建步骤生成 `web/`。
 3. 在 AstrBot 使用的 Python 环境安装 `requirements.txt` 依赖，在插件管理中重载/启用插件。
 4. 在插件配置中设置至少 12 位的 `web_password`，打开 `http://服务器地址:8765/` 登录。密码留空时自动生成在下面的数据目录中。
 
@@ -71,10 +79,10 @@ python -m astrbot_plugin_fmm.dev --port 8765
 
 打开 `http://127.0.0.1:8765/`，密码在 `.fmm-preview/admin_password.txt`。也可以通过环境变量 `FMM_WEB_PASSWORD` 指定预览密码。此模式不依赖 AstrBot，且不会发送 QQ 消息。
 
-前端源码保留在 `fmm-main/`，构建产物自动写入插件的 `web/`，发布包已包含产物，无需在服务器安装 Node.js：
+前端源码位于 `frontend/`，构建产物自动写入插件根目录的 `web/`。服务器运行插件时不依赖 Node.js，但自行从源码部署前需要先完成构建：
 
 ```bash
-cd fmm-main
+cd frontend
 npm ci --no-audit --no-fund
 npm run build
 ```
