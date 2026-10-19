@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { ArrowDown, ArrowUp, Bell, CalendarDays, Check, Clock3, Edit3, Plus, Send, Trash2, Users, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, Bell, CalendarDays, Check, Clock3, Edit3, Plus, RefreshCw, Send, Trash2, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, PluginState, Rule } from '../api/PluginAPI';
+import { getSyncGroups, SyncGroup } from '../api/MemberSyncAPI';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 
 const DAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -15,6 +16,29 @@ export function GroupReminders({ state, refresh }: { state: PluginState; refresh
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<{ rule: Rule; action: 'test' | 'delete' } | null>(null);
   const [query, setQuery] = useState('');
+  const [groups, setGroups] = useState<SyncGroup[]>([]);
+  const [groupsNote, setGroupsNote] = useState('');
+  const loadGroups = useCallback(async (platformId?: string) => {
+    try {
+      const res = await getSyncGroups(platformId);
+      setGroups(res.groups || []);
+      setGroupsNote('');
+    } catch (error) {
+      setGroups([]);
+      setGroupsNote(error instanceof Error ? error.message : '读取群列表失败');
+    }
+  }, []);
+  useEffect(() => { void loadGroups(); }, [loadGroups]);
+  useEffect(() => { if (draft) void loadGroups(draft.platform_id || undefined); }, [draft?.id, draft?.platform_id, loadGroups]);
+  const groupName = (id: string) => groups.find(g => g.id === id)?.name || '';
+  const platformName = (id: string) => state.platforms.find(p => p.id === id)?.name || id;
+  const groupHint = (rule: Rule) => {
+    if (!rule.group_id) return groups.length ? '下拉里是机器人已加入的群，带群名和人数' : (groupsNote || '填机器人要发消息的那个群号');
+    const picked = groups.find(g => g.id === rule.group_id);
+    if (groups.length && !picked) return `列表里没有 ${rule.group_id}，可能机器人不在这个群里了`;
+    const used = state.rules.filter(r => r.group_id === rule.group_id && r.id !== rule.id).length;
+    return [picked?.name || `群 ${rule.group_id}`, picked?.count ? `${picked.count} 人` : '', used ? `该群已有 ${used} 条排班` : '该群暂无排班'].filter(Boolean).join(' · ');
+  };
   const active = state.members.filter(m => m.data.status === '在职');
   const names = new Map(state.members.map(m => [m.id, m.data.name]));
   const run = async (work: () => Promise<unknown>, success: string) => {
@@ -44,7 +68,7 @@ export function GroupReminders({ state, refresh }: { state: PluginState; refresh
     <div className="fmm-filter"><input aria-label="搜索排班" placeholder="搜索排班名称或群号" value={query} onChange={e => setQuery(e.target.value)} /><span className="muted"><Clock3 size={14} />北京时间</span></div>
     {filtered.length === 0 ? <div className="fmm-empty"><CalendarDays size={32} /><h3>{query ? '没有匹配的排班' : '暂无排班'}</h3><span className="muted">{active.length ? '尚无排班记录' : '尚无在职成员'}</span></div> :
       <div className="rule-list">{filtered.map(rule => <article className="rule-item" key={rule.id}>
-        <div className="rule-main"><div className="rule-icon"><Bell size={20} /></div><div className="rule-title"><h3>{rule.name}</h3><span className="muted">群 {rule.group_id} · {rule.platform_id}</span></div>
+        <div className="rule-main"><div className="rule-icon"><Bell size={20} /></div><div className="rule-title"><h3>{rule.name}</h3><span className="muted" title={`群 ${rule.group_id} · ${rule.platform_id}`}>群 {groupName(rule.group_id) ? `${groupName(rule.group_id)}（${rule.group_id}）` : rule.group_id} · {platformName(rule.platform_id)}</span></div>
           <label className="fmm-toggle" title={rule.enabled ? '暂停排班' : '启用排班'}><input type="checkbox" role="switch" aria-label={`${rule.name}启用状态`} checked={rule.enabled} disabled={busy || rule.blocked} onChange={() => run(() => api(`/rules/${rule.id}`, 'PUT', { ...rule, enabled: !rule.enabled }), rule.enabled ? '排班已暂停' : '排班已启用')} /><span /></label></div>
         <div className="rule-facts"><span><Clock3 size={15} /><strong>{rule.time}</strong></span><span><CalendarDays size={15} />{rule.weekdays.length === 7 ? '每天' : rule.weekdays.map(d => '周' + DAYS[d]).join('、')}</span><span><Users size={15} />每次 {rule.count} 人 / 池内 {rule.pool.length} 人</span></div>
         <div className="rule-next"><span className="muted">下一轮</span><strong>{rule.next_members?.join('、') || '暂无可用人员'}</strong>{rule.blocked && <span className="status warning">待处理发送记录</span>}{!rule.enabled && <span className="status neutral">已暂停</span>}</div>
@@ -57,7 +81,11 @@ export function GroupReminders({ state, refresh }: { state: PluginState; refresh
       {draft && <form onSubmit={save} className="rule-form"><div className="form-grid">
         <label>排班名称<input required maxLength={50} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
         <label>机器人账号<select required value={draft.platform_id} onChange={e => setDraft({ ...draft, platform_id: e.target.value })}><option value="">选择账号</option>{state.platforms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label>目标 QQ 群<input required inputMode="numeric" pattern="[1-9][0-9]{4,11}" maxLength={12} value={draft.group_id} onChange={e => setDraft({ ...draft, group_id: e.target.value })} /></label>
+        <label>目标 QQ 群<div className="group-picker">{groups.length === 0
+          ? <input required inputMode="numeric" pattern="[1-9][0-9]{4,11}" maxLength={12} value={draft.group_id} placeholder={groupsNote ? '读不到群列表，手动填群号' : '群号'} onChange={e => setDraft({ ...draft, group_id: e.target.value })} />
+          : <select required value={draft.group_id} onChange={e => setDraft({ ...draft, group_id: e.target.value })}><option value="">选择群</option>{draft.group_id && !groupName(draft.group_id) && <option value={draft.group_id}>群 {draft.group_id}（不在列表里）</option>}{groups.map(g => <option key={g.id} value={g.id}>{g.name || '（未命名群）'} · {g.id}{g.count ? ` · ${g.count} 人` : ''}</option>)}</select>}
+          <button type="button" className="icon-action" title="重新读取群列表" aria-label="重新读取群列表" onClick={() => loadGroups(draft.platform_id || undefined)}><RefreshCw size={14} /></button>
+        </div><span className="muted group-preview">{groupHint(draft)}</span></label>
         <label>提醒时间<input required type="time" value={draft.time} onChange={e => setDraft({ ...draft, time: e.target.value })} /></label>
         <label>开始日期<input required type="date" value={draft.start_date} onChange={e => setDraft({ ...draft, start_date: e.target.value })} /></label>
         <label>每次提醒人数<input required type="number" min={1} max={Math.max(1, draft.pool.length)} value={draft.count} onChange={e => setDraft({ ...draft, count: Number(e.target.value) })} /></label>

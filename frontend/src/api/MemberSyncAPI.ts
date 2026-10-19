@@ -128,8 +128,9 @@ async function request<T>(endpoint: string, method: 'GET' | 'POST', body?: unkno
     return data.data as T;
 }
 
-export function getSyncGroups(): Promise<SyncGroupsResponse> {
-    return request<SyncGroupsResponse>('/sync/groups', 'GET');
+export function getSyncGroups(platformId?: string): Promise<SyncGroupsResponse> {
+    const query = platformId ? `?platform_id=${encodeURIComponent(platformId)}` : '';
+    return request<SyncGroupsResponse>(`/sync/groups${query}`, 'GET');
 }
 
 export function previewMemberSync(groupId: string): Promise<SyncPlan> {
