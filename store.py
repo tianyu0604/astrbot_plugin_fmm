@@ -30,7 +30,7 @@ class Store:
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            require(version <= 1, "数据库版本高于当前插件版本，请升级插件")
+            require(version <= 2, "数据库版本高于当前插件版本，请升级插件")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS members (
                     id TEXT PRIMARY KEY, qq TEXT NOT NULL UNIQUE, data TEXT NOT NULL,
@@ -57,7 +57,15 @@ class Store:
                 CREATE UNIQUE INDEX IF NOT EXISTS runs_daily ON runs(rule_id, day)
                     WHERE kind='scheduled';
                 CREATE INDEX IF NOT EXISTS runs_status ON runs(rule_id, status);
-                PRAGMA user_version=1;
+                CREATE TABLE IF NOT EXISTS ai_audit (
+                    id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, platform_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL, tool_name TEXT NOT NULL, target TEXT NOT NULL,
+                    before_data TEXT NOT NULL DEFAULT '', after_data TEXT NOT NULL DEFAULT '',
+                    outcome TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ai_audit_created ON ai_audit(created_at);
+                PRAGMA user_version=2;
             """)
             # A process exit between dispatch and commit is not evidence of non-delivery.
             db.execute("UPDATE runs SET status='unknown', error=? WHERE status='sending'",
@@ -203,7 +211,8 @@ class Store:
     def rule(self, key):
         return next((r for r in self.rules() if r["id"] == key), None)
 
-    def save_rule(self, data, key=None):
+    def validated_rule(self, data):
+        """Apply the existing schedule validation without writing to SQLite."""
         require(isinstance(data, dict), "排班格式错误")
         name = str(data.get("name", "")).strip()
         platform = str(data.get("platform_id", "")).strip()
@@ -231,6 +240,10 @@ class Store:
         saved = {"name": name, "platform_id": platform, "group_id": group, "time": at,
                  "weekdays": sorted(set(weekdays)), "pool": pool, "count": count,
                  "start_date": start, "message": message, "enabled": data.get("enabled", False)}
+        return saved
+
+    def save_rule(self, data, key=None):
+        saved = self.validated_rule(data)
         with self.connect() as db:
             if key:
                 old = db.execute("SELECT * FROM rules WHERE id=?", (key,)).fetchone()
@@ -239,7 +252,7 @@ class Store:
                 require(not db.execute("SELECT 1 FROM runs WHERE rule_id=? AND kind='scheduled' AND status IN ('sending','failed','unknown')", (key,)).fetchone(), "存在未处理的发送记录，请先处理后再修改排班")
                 previous = json.loads(old["data"])["pool"]
                 next_id = previous[old["cursor"] % len(previous)]
-                cursor = pool.index(next_id) if next_id in pool else 0
+                cursor = saved["pool"].index(next_id) if next_id in saved["pool"] else 0
                 db.execute("UPDATE rules SET data=?,cursor=?,revision=revision+1 WHERE id=?",
                            (json.dumps(saved), cursor, key))
             else:
@@ -337,6 +350,46 @@ class Store:
         with self.connect() as db:
             row = db.execute("SELECT * FROM runs WHERE id=?", (key,)).fetchone()
             return dict(row, snapshot=json.loads(row["snapshot"])) if row else None
+
+    def record_ai_audit(
+        self,
+        admin_id,
+        platform_id,
+        session_id,
+        tool_name,
+        target,
+        before=None,
+        after=None,
+        outcome="success",
+        message="",
+    ):
+        """Persist a compact audit record; callers must not pass credentials."""
+
+        def encode(value):
+            if value in (None, "", [], {}):
+                return ""
+            return json.dumps(value, ensure_ascii=False)[:12000]
+
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO ai_audit ("
+                "id,admin_id,platform_id,session_id,tool_name,target,"
+                "before_data,after_data,outcome,message,created_at"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    uuid4().hex,
+                    str(admin_id or "")[:100],
+                    str(platform_id or "")[:100],
+                    str(session_id or "")[:300],
+                    str(tool_name or "")[:100],
+                    str(target or "")[:500],
+                    encode(before),
+                    encode(after),
+                    str(outcome or "")[:30],
+                    str(message or "")[:1000],
+                    now_iso(),
+                ),
+            )
 
     def backup(self, path):
         target = sqlite3.connect(path)
