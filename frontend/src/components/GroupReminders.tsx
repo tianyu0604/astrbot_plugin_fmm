@@ -41,6 +41,7 @@ export function GroupReminders({ state, refresh }: { state: PluginState; refresh
   };
   const active = state.members.filter(m => m.data.status === '在职');
   const names = new Map(state.members.map(m => [m.id, m.data.name]));
+  const activeIds = new Set(active.map(m => m.id));
   const run = async (work: () => Promise<unknown>, success: string) => {
     setBusy(true);
     try { await work(); await refresh(); toast.success(success); }
@@ -61,6 +62,13 @@ export function GroupReminders({ state, refresh }: { state: PluginState; refresh
     [pool[index], pool[index + delta]] = [pool[index + delta], pool[index]];
     setDraft({ ...draft, pool });
   };
+  const setCurrent = (rule: Rule, memberId: string) => {
+    if (!memberId) return;
+    void run(
+      () => api(`/rules/${rule.id}/current`, 'POST', { member_id: memberId, revision: rule.revision }),
+      '下一轮起点已更新',
+    );
+  };
   const filtered = state.rules.filter(r => `${r.name} ${r.group_id}`.includes(query));
   return <section>
     <div className="fmm-section-heading"><div><h2>群提醒</h2><span className="muted">{state.rules.length} 条排班 · {state.rules.filter(r => r.enabled).length} 条已启用</span></div>
@@ -74,6 +82,7 @@ export function GroupReminders({ state, refresh }: { state: PluginState; refresh
         <div className="rule-next"><span className="muted">下一轮</span><strong>{rule.next_members?.join('、') || '暂无可用人员'}</strong>{rule.blocked && <span className="status warning">待处理发送记录</span>}{!rule.enabled && <span className="status neutral">已暂停</span>}</div>
         {rule.selection_error && <p className="inline-error">{rule.selection_error}</p>}
         <div className="pool-preview">{rule.pool.map((id, i) => <span key={id} className={i === rule.cursor ? 'next-person' : ''}><small>{i + 1}</small>{names.get(id) || '成员已移除'}</span>)}</div>
+        <div className="rule-current"><label><span>手动选择起点</span><select aria-label={`${rule.name}下一轮起始成员`} value={rule.pool[rule.cursor] || ''} disabled={busy || rule.blocked} onChange={e => setCurrent(rule, e.target.value)}>{rule.pool.map(id => <option key={id} value={id} disabled={!activeIds.has(id)}>{names.get(id) || '成员已移除'}{!activeIds.has(id) ? '（非在职）' : ''}</option>)}</select></label><span className="muted">下一次从所选成员开始</span></div>
         {rule.message && <p className="rule-message">{rule.message}</p>}
         <footer><span className="muted">自 {rule.start_date} 起</span><div className="action-row"><button className="action" disabled={busy} onClick={() => setConfirm({ rule, action: 'test' })}><Send size={14} />测试发送</button><button className="icon-action" title="编辑排班" aria-label={`编辑${rule.name}`} disabled={busy || rule.blocked} onClick={() => setDraft({ ...rule })}><Edit3 size={16} /></button><button className="icon-action danger" title="删除排班" aria-label={`删除${rule.name}`} disabled={busy || rule.blocked} onClick={() => setConfirm({ rule, action: 'delete' })}><Trash2 size={16} /></button></div></footer>
       </article>)}</div>}

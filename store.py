@@ -247,6 +247,31 @@ class Store:
                 db.execute("INSERT INTO rules (id,data) VALUES (?,?)", (key, json.dumps(saved)))
         return self.rule(key)
 
+    def set_rule_current(self, key, member_id, revision):
+        require(isinstance(member_id, str) and member_id, "请选择下一轮起始成员")
+        require(type(revision) is int, "排班版本无效")
+        members = {m["id"]: m for m in self.members()}
+        member = members.get(member_id)
+        require(member is not None, "所选成员不存在")
+        require(member["data"]["status"] == "在职", "只能选择在职成员")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM rules WHERE id=?", (key,)).fetchone()
+            require(row is not None, "排班不存在")
+            require(row["revision"] == revision, "排班已更新，请刷新后再调整")
+            require(not db.execute(
+                "SELECT 1 FROM runs WHERE rule_id=? AND kind='scheduled' "
+                "AND status IN ('sending','failed','unknown')", (key,)
+            ).fetchone(), "存在未处理的发送记录，请先处理后再调整")
+            pool = json.loads(row["data"])["pool"]
+            require(member_id in pool, "所选成员不在该排班的人员池中")
+            cursor = pool.index(member_id)
+            require(db.execute(
+                "UPDATE rules SET cursor=?,revision=revision+1 WHERE id=? AND revision=?",
+                (cursor, key, revision),
+            ).rowcount == 1, "排班已更新，请刷新后再调整")
+        return self.rule(key)
+
     def delete_rule(self, key):
         with self.connect() as db:
             require(not db.execute("SELECT 1 FROM runs WHERE rule_id=? AND kind='scheduled' AND status IN ('sending','failed','unknown')", (key,)).fetchone(), "请先处理未确认的发送记录")

@@ -143,6 +143,16 @@ def create_app(service, data_dir, password, static_dir=None, sync=None):
         await service.reschedule()
         return result(saved)
 
+    async def set_rule_current(request):
+        body = await request.json()
+        saved = await service.call(
+            "set_rule_current",
+            request.match_info["key"],
+            body.get("member_id"),
+            body.get("revision"),
+        )
+        return result(saved)
+
     async def delete_rule(request):
         await service.call("delete_rule", request.match_info["key"])
         await service.reschedule()
@@ -224,6 +234,7 @@ def create_app(service, data_dir, password, static_dir=None, sync=None):
     app.router.add_post(API + "/archive_field/saveChanges", save_fields)
     app.router.add_post(API + "/rules", save_rule)
     app.router.add_put(API + "/rules/{key}", save_rule)
+    app.router.add_post(API + "/rules/{key}/current", set_rule_current)
     app.router.add_delete(API + "/rules/{key}", delete_rule)
     app.router.add_post(API + "/rules/{key}/test", test_rule)
     app.router.add_post(API + "/runs/{key}/resolve", resolve)
